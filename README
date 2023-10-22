@@ -1,0 +1,30 @@
+Install YOLOv5
+-----------------
+git clone https://github.com/ultralytics/yolov5  
+cd yolov5
+pip install -r requirements.txt
+cd ..
+
+Download pretrained weights
+----------------------------
+wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=1OYwrlRti4cieuvVr8ERaJhTQdFJXWT4I' -O- | sed -rn 's/.\*confirm=(\[0-9A-Za-z\_\]+).\*/\\1\\n/p')&id=1OYwrlRti4cieuvVr8ERaJhTQdFJXWT4I" -O best.pt && rm -rf /tmp/cookies.txt
+
+Run YOLOv5 detection
+---------------------
+cd yolov5
+python detect.py --weights ../best.pt --img 1280 --conf 0.25 --source ../clips/08fd33\_4.mp4 --name custom  
+cd ..
+
+Install ByteTrack
+------------------
+git clone https://github.com/ifzhang/ByteTrack.git
+cd ByteTrack
+pip3 install -r requirements.txt
+python3 setup.py develop
+
+Install other dependencies
+----------------------------
+pip install cython_bbox
+pip install onemetric --quiet
+pip install loguru 
+pip install lap
