@@ -4,7 +4,6 @@ import numpy as np
 from typing import Tuple,List
 from bytetrack_inference_demo_yolov5_with_speed import Detection
 
-# annotation
 @dataclass(frozen=True)
 class Point:
     x: float
@@ -14,7 +13,6 @@ class Point:
     def int_xy_tuple(self) -> Tuple[int, int]:
         return int(self.x), int(self.y)
 
-#annotation
 @dataclass(frozen=True)
 class Rect:
     x: float
@@ -71,7 +69,6 @@ class Rect:
 
 
 
-# annotation
 def filter_detections_by_class(detections: List[Detection], class_name: str) -> List[Detection]:
     return [
         detection
@@ -81,7 +78,6 @@ def filter_detections_by_class(detections: List[Detection], class_name: str) -> 
     ]
 
 
-# anntation
 @dataclass(frozen=True)
 class Color:
     r: int
@@ -97,37 +93,30 @@ class Color:
         r, g, b = tuple(int(hex_string[1 + i:1 + i + 2], 16) for i in (0, 2, 4))
         return Color(r=r, g=g, b=b)
 
-# anntation
 def draw_rect(image: np.ndarray, rect: Rect, color: Color, thickness: int = 2) -> np.ndarray:
     cv2.rectangle(image, rect.top_left.int_xy_tuple, rect.bottom_right.int_xy_tuple, color.bgr_tuple, thickness)
     return image
 
-# anntation
 def draw_filled_rect(image: np.ndarray, rect: Rect, color: Color) -> np.ndarray:
     cv2.rectangle(image, rect.top_left.int_xy_tuple, rect.bottom_right.int_xy_tuple, color.bgr_tuple, -1)
     return image
 
-# anntation
 def draw_polygon(image: np.ndarray, countour: np.ndarray, color: Color, thickness: int = 2) -> np.ndarray:
     cv2.drawContours(image, [countour], 0, color.bgr_tuple, thickness)
     return image
 
-# anntation
 def draw_filled_polygon(image: np.ndarray, countour: np.ndarray, color: Color) -> np.ndarray:
     cv2.drawContours(image, [countour], 0, color.bgr_tuple, -1)
     return image
 
-# anntation
 def draw_text(image: np.ndarray, anchor: Point, text: str, color: Color, thickness: int = 2) -> np.ndarray:
     cv2.putText(image, text, anchor.int_xy_tuple, cv2.FONT_HERSHEY_SIMPLEX, 0.7, color.bgr_tuple, thickness, 2, False)
     return image
 
-# anntation
 def draw_speed(image: np.ndarray, anchor: Point, text: str, color: Color, thickness: int = 2) -> np.ndarray:
     cv2.putText(image, text, anchor.int_xy_tuple, cv2.FONT_HERSHEY_SIMPLEX, 0.7, color.bgr_tuple, thickness, 2, False)
     return image
 
-# anntation
 def draw_ellipse(image: np.ndarray, rect: Rect, color: Color, thickness: int = 2) -> np.ndarray:
     cv2.ellipse(
         image,
@@ -144,7 +133,6 @@ def draw_ellipse(image: np.ndarray, rect: Rect, color: Color, thickness: int = 2
 
 
 
-# anntation
 @dataclass
 class BaseAnnotator:
     colors: List[Color]
@@ -184,7 +172,6 @@ COLORS = [
     REFEREE_COLOR
 ]
 THICKNESS = 4
-
 
 # initiate annotators
 annotator = BaseAnnotator(
@@ -299,3 +286,44 @@ class TextAnnotator:
                 color=self.text_color,
                 thickness=self.text_thickness)
         return annotated_image
+
+player_goalkeeper_text_annotator = TextAnnotator(
+    PLAYER_COLOR, text_color=Color(255, 255, 255), text_thickness=2)
+referee_text_annotator = TextAnnotator(
+    REFEREE_COLOR, text_color=Color(0, 0, 0), text_thickness=2)
+
+ball_marker_annotator = MarkerAnntator(
+    color=BALL_MARKER_FILL_COLOR)
+player_in_possession_marker_annotator = MarkerAnntator(
+    color=PLAYER_MARKER_FILL_COLOR)
+
+player_marker_annotator = MarkerAnntator(color=PLAYER_MARKER_FILL_COLOR)
+
+base_annotator = BaseAnnotator(
+    colors=[
+        BALL_COLOR,
+        PLAYER_COLOR,
+        REFEREE_COLOR
+    ],
+    thickness=THICKNESS)
+
+def annotate_frame(frame,tracked_detections,tracked_goalkeeper_detections,tracked_player_detections,tracked_referee_detections,ball_detections, player_in_possession_detection):
+    annotated_image = frame.copy()
+    annotated_image = base_annotator.annotate(
+        image=annotated_image,
+        detections=tracked_detections)
+
+    annotated_image = player_goalkeeper_text_annotator.annotate(
+        image=annotated_image,
+        detections=tracked_goalkeeper_detections + tracked_player_detections)
+    annotated_image = referee_text_annotator.annotate(
+        image=annotated_image,
+        detections=tracked_referee_detections)
+
+    annotated_image = ball_marker_annotator.annotate(
+        image=annotated_image,
+        detections=ball_detections)
+    annotated_image = player_marker_annotator.annotate(
+        image=annotated_image,
+        detections=[player_in_possession_detection] if player_in_possession_detection else [])
+    return annotated_image

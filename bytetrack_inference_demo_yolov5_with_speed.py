@@ -1,8 +1,7 @@
-import torch
-from annotate import BALL_COLOR, BALL_MARKER_FILL_COLOR, PLAYER_COLOR, PLAYER_IN_POSSESSION_PROXIMITY, PLAYER_MARKER_FILL_COLOR, REFEREE_COLOR, THICKNESS, BaseAnnotator, Color, MarkerAnntator, TextAnnotator, filter_detections_by_class
-from detect import SOURCE_VIDEO_PATH, WEIGHTS_PATH
+from annotate import BALL_COLOR, PLAYER_COLOR, PLAYER_IN_POSSESSION_PROXIMITY, REFEREE_COLOR, THICKNESS, BaseAnnotator, annotate_frame, filter_detections_by_class
+from detect import loadyolo
 from moviepy.editor import VideoFileClip
-from processing import VideoConfig, generate_frames, get_video_writer
+from processing import VideoConfig,get_video_writer
 from statitstique import add_speed, get_player_in_possession
 from track import BYTETrackerArgs, Detection, detections2boxes, match_detections_with_tracks
 from yolox.tracker.byte_tracker import BYTETracker
@@ -11,10 +10,10 @@ from tqdm.notebook import tqdm
 
 TARGET_VIDEO_PATH = "./final/08fd33_4.mp4"
 SOURCE_VIDEO_PATH = "./clips/08fd33_4.mp4"
+WEIGHTS_PATH = "../best.pt"
 
 video = VideoFileClip(SOURCE_VIDEO_PATH)
 video_length = video.duration
-# initiate video writer
 
 video_config = VideoConfig(
     fps=30,
@@ -33,24 +32,12 @@ base_annotator = BaseAnnotator(
     ],
     thickness=THICKNESS)
 
-player_goalkeeper_text_annotator = TextAnnotator(
-    PLAYER_COLOR, text_color=Color(255, 255, 255), text_thickness=2)
-referee_text_annotator = TextAnnotator(
-    REFEREE_COLOR, text_color=Color(0, 0, 0), text_thickness=2)
-
-ball_marker_annotator = MarkerAnntator(
-    color=BALL_MARKER_FILL_COLOR)
-player_in_possession_marker_annotator = MarkerAnntator(
-    color=PLAYER_MARKER_FILL_COLOR)
-
-player_marker_annotator = MarkerAnntator(color=PLAYER_MARKER_FILL_COLOR)
 byte_tracker = BYTETracker(BYTETrackerArgs())
 
 # initiate tracker
 previous_tracked_detections=False
 detections_dict = {}
-frame_iterator = iter(generate_frames(video_file=SOURCE_VIDEO_PATH))
-model = torch.hub.load('ultralytics/yolov5', 'custom', WEIGHTS_PATH, device=0)
+model,frame_iterator = loadyolo(WEIGHTS_PATH,SOURCE_VIDEO_PATH)
 
 # loop over frames
 for frame in tqdm(frame_iterator, total=750):
@@ -85,30 +72,16 @@ for frame in tqdm(frame_iterator, total=750):
     tracked_detections = match_detections_with_tracks(detections=tracked_detections, tracks=tracks)
     if(previous_tracked_detections):
         tracked_detections=add_speed(tracked_detections,previous_tracked_detections,video_length/750)
+
     previous_tracked_detections=tracked_detections
     tracked_referee_detections = filter_detections_by_class(detections=tracked_detections, class_name="referee")
     tracked_goalkeeper_detections = filter_detections_by_class(detections=tracked_detections, class_name="goalkeeper")
     tracked_player_detections = filter_detections_by_class(detections=tracked_detections, class_name="player")
 
     # annotate video frame
-    annotated_image = frame.copy()
-    annotated_image = base_annotator.annotate(
-        image=annotated_image,
-        detections=tracked_detections)
-
-    annotated_image = player_goalkeeper_text_annotator.annotate(
-        image=annotated_image,
-        detections=tracked_goalkeeper_detections + tracked_player_detections)
-    annotated_image = referee_text_annotator.annotate(
-        image=annotated_image,
-        detections=tracked_referee_detections)
-
-    annotated_image = ball_marker_annotator.annotate(
-        image=annotated_image,
-        detections=ball_detections)
-    annotated_image = player_marker_annotator.annotate(
-        image=annotated_image,
-        detections=[player_in_possession_detection] if player_in_possession_detection else [])
+    annotated_image = annotate_frame(frame,tracked_detections,tracked_goalkeeper_detections,tracked_player_detections,tracked_referee_detections,ball_detections, player_in_possession_detection)
+    
+    # dict of info about each player
     for detection in detections:
         tracker_id = detection.tracker_id
         if tracker_id is not None:
