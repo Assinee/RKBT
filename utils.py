@@ -1,9 +1,12 @@
 from dataclasses import dataclass
-import cv2
+from typing import Generator, Tuple, Optional, List, Dict
 import numpy as np
-from typing import Tuple,List
-from bytetrack_inference_demo_yolov5_with_speed import Detection
+import cv2
+import os
+import matplotlib.pyplot as plt
+from config import MARKER_CONTOUR_COLOR, MARKER_CONTOUR_THICKNESS, MARKER_HEIGHT, MARKER_MARGIN, MARKER_WIDTH
 
+# geometry utilities
 @dataclass(frozen=True)
 class Point:
     x: float
@@ -12,6 +15,7 @@ class Point:
     @property
     def int_xy_tuple(self) -> Tuple[int, int]:
         return int(self.x), int(self.y)
+
 
 @dataclass(frozen=True)
 class Rect:
@@ -68,6 +72,34 @@ class Rect:
         return self.min_x < point.x < self.max_x and self.min_y < point.y < self.max_y
 
 
+# detection utilities
+@dataclass
+class Detection:
+    rect: Rect
+    class_id: int
+    class_name: str
+    confidence: float
+    tracker_id: Optional[int] = None
+    speed: Optional[int] = None
+
+    @classmethod
+    def from_results(cls, pred: np.ndarray, names: Dict[int, str]):
+        result = []
+        for x_min, y_min, x_max, y_max, confidence, class_id in pred:
+            class_id=int(class_id)
+            result.append(Detection(
+                rect=Rect(
+                    x=float(x_min),
+                    y=float(y_min),
+                    width=float(x_max - x_min),
+                    height=float(y_max - y_min)
+                ),
+                class_id=class_id,
+                class_name=names[class_id],
+                confidence=float(confidence)
+            ))
+        return result
+
 
 def filter_detections_by_class(detections: List[Detection], class_name: str) -> List[Detection]:
     return [
@@ -78,6 +110,7 @@ def filter_detections_by_class(detections: List[Detection], class_name: str) -> 
     ]
 
 
+# draw utilities
 @dataclass(frozen=True)
 class Color:
     r: int
@@ -89,33 +122,35 @@ class Color:
         return self.b, self.g, self.r
 
     @classmethod
-    def from_hex_string(cls, hex_string: str):
+    def from_hex_string(cls, hex_string: str) -> Color:
         r, g, b = tuple(int(hex_string[1 + i:1 + i + 2], 16) for i in (0, 2, 4))
         return Color(r=r, g=g, b=b)
+
 
 def draw_rect(image: np.ndarray, rect: Rect, color: Color, thickness: int = 2) -> np.ndarray:
     cv2.rectangle(image, rect.top_left.int_xy_tuple, rect.bottom_right.int_xy_tuple, color.bgr_tuple, thickness)
     return image
 
+
 def draw_filled_rect(image: np.ndarray, rect: Rect, color: Color) -> np.ndarray:
     cv2.rectangle(image, rect.top_left.int_xy_tuple, rect.bottom_right.int_xy_tuple, color.bgr_tuple, -1)
     return image
+
 
 def draw_polygon(image: np.ndarray, countour: np.ndarray, color: Color, thickness: int = 2) -> np.ndarray:
     cv2.drawContours(image, [countour], 0, color.bgr_tuple, thickness)
     return image
 
+
 def draw_filled_polygon(image: np.ndarray, countour: np.ndarray, color: Color) -> np.ndarray:
     cv2.drawContours(image, [countour], 0, color.bgr_tuple, -1)
     return image
+
 
 def draw_text(image: np.ndarray, anchor: Point, text: str, color: Color, thickness: int = 2) -> np.ndarray:
     cv2.putText(image, text, anchor.int_xy_tuple, cv2.FONT_HERSHEY_SIMPLEX, 0.7, color.bgr_tuple, thickness, 2, False)
     return image
 
-def draw_speed(image: np.ndarray, anchor: Point, text: str, color: Color, thickness: int = 2) -> np.ndarray:
-    cv2.putText(image, text, anchor.int_xy_tuple, cv2.FONT_HERSHEY_SIMPLEX, 0.7, color.bgr_tuple, thickness, 2, False)
-    return image
 
 def draw_ellipse(image: np.ndarray, rect: Rect, color: Color, thickness: int = 2) -> np.ndarray:
     cv2.ellipse(
@@ -132,7 +167,7 @@ def draw_ellipse(image: np.ndarray, rect: Rect, color: Color, thickness: int = 2
     return image
 
 
-
+# base annotator
 @dataclass
 class BaseAnnotator:
     colors: List[Color]
@@ -149,56 +184,7 @@ class BaseAnnotator:
             )
         return annotated_image
 
-# white
-BALL_COLOR_HEX = "#FFFFFF"
-BALL_COLOR = Color.from_hex_string(BALL_COLOR_HEX)
 
-# red
-GOALKEEPER_COLOR_HEX = "#850101"
-GOALKEEPER_COLOR = Color.from_hex_string(GOALKEEPER_COLOR_HEX)
-
-# green
-PLAYER_COLOR_HEX = "#00D4BB"
-PLAYER_COLOR = Color.from_hex_string(PLAYER_COLOR_HEX)
-
-# yellow
-REFEREE_COLOR_HEX = "#FFFF00"
-REFEREE_COLOR = Color.from_hex_string(REFEREE_COLOR_HEX)
-
-COLORS = [
-    BALL_COLOR,
-    GOALKEEPER_COLOR,
-    PLAYER_COLOR,
-    REFEREE_COLOR
-]
-THICKNESS = 4
-
-# initiate annotators
-annotator = BaseAnnotator(
-    colors=COLORS,
-    thickness=THICKNESS)
-
-# black
-MARKER_CONTOUR_COLOR_HEX = "000000"
-MARKER_CONTOUR_COLOR = Color.from_hex_string(MARKER_CONTOUR_COLOR_HEX)
-
-# red
-PLAYER_MARKER_FILL_COLOR_HEX = "FF0000"
-PLAYER_MARKER_FILL_COLOR = Color.from_hex_string(PLAYER_MARKER_FILL_COLOR_HEX)
-
-# green
-BALL_MERKER_FILL_COLOR_HEX = "00FF00"
-BALL_MARKER_FILL_COLOR = Color.from_hex_string(BALL_MERKER_FILL_COLOR_HEX)
-
-MARKER_CONTOUR_THICKNESS = 2
-MARKER_WIDTH = 20
-MARKER_HEIGHT = 20
-MARKER_MARGIN = 10
-
-# distance in pixels from the player's bounding box where we consider the ball is in his possession
-PLAYER_IN_POSSESSION_PROXIMITY = 30
-
-# annotation
 # calculates coordinates of possession marker
 def calculate_marker(anchor: Point) -> np.ndarray:
     x, y = anchor.int_xy_tuple
@@ -209,7 +195,6 @@ def calculate_marker(anchor: Point) -> np.ndarray:
     ]))
 
 
-# annotation
 # draw single possession marker
 def draw_marker(image: np.ndarray, anchor: Point, color: Color) -> np.ndarray:
     possession_marker_countour = calculate_marker(anchor=anchor)
@@ -223,21 +208,6 @@ def draw_marker(image: np.ndarray, anchor: Point, color: Color) -> np.ndarray:
         color=MARKER_CONTOUR_COLOR,
         thickness=MARKER_CONTOUR_THICKNESS)
     return image
-
-
-@dataclass
-class MarkerAnntator:
-
-    color: Color
-
-    def annotate(self, image: np.ndarray, detections: List[Detection]) -> np.ndarray:
-        annotated_image = image.copy()
-        for detection in detections:
-            annotated_image = draw_marker(
-                image=image,
-                anchor=detection.rect.top_center,
-                color=self.color)
-        return annotated_image
 
 @dataclass
 class TextAnnotator:
@@ -281,49 +251,58 @@ class TextAnnotator:
 
             annotated_image = draw_text(
                 image=annotated_image,
-                anchor=Point(x=x+width, y=y + height),
+                anchor=Point(x=x, y=y - height),
                 text=str(detection.speed),
                 color=self.text_color,
                 thickness=self.text_thickness)
+
         return annotated_image
 
-player_goalkeeper_text_annotator = TextAnnotator(
-    PLAYER_COLOR, text_color=Color(255, 255, 255), text_thickness=2)
-referee_text_annotator = TextAnnotator(
-    REFEREE_COLOR, text_color=Color(0, 0, 0), text_thickness=2)
+# dedicated annotator to draw possession markers on video frames
+@dataclass
+class MarkerAnntator:
 
-ball_marker_annotator = MarkerAnntator(
-    color=BALL_MARKER_FILL_COLOR)
-player_in_possession_marker_annotator = MarkerAnntator(
-    color=PLAYER_MARKER_FILL_COLOR)
+    color: Color
 
-player_marker_annotator = MarkerAnntator(color=PLAYER_MARKER_FILL_COLOR)
+    def annotate(self, image: np.ndarray, detections: List[Detection]) -> np.ndarray:
+        annotated_image = image.copy()
+        for detection in detections:
+            annotated_image = draw_marker(
+                image=image,
+                anchor=detection.rect.top_center,
+                color=self.color)
+        return annotated_image
 
-base_annotator = BaseAnnotator(
-    colors=[
-        BALL_COLOR,
-        PLAYER_COLOR,
-        REFEREE_COLOR
-    ],
-    thickness=THICKNESS)
+# video saving
+@dataclass(frozen=True)
+class VideoConfig:
+    fps: float
+    width: int
+    height: int
 
-def annotate_frame(frame,tracked_detections,tracked_goalkeeper_detections,tracked_player_detections,tracked_referee_detections,ball_detections, player_in_possession_detection):
-    annotated_image = frame.copy()
-    annotated_image = base_annotator.annotate(
-        image=annotated_image,
-        detections=tracked_detections)
 
-    annotated_image = player_goalkeeper_text_annotator.annotate(
-        image=annotated_image,
-        detections=tracked_goalkeeper_detections + tracked_player_detections)
-    annotated_image = referee_text_annotator.annotate(
-        image=annotated_image,
-        detections=tracked_referee_detections)
+# create cv2.VideoWriter object that we can use to save output video
+def get_video_writer(target_video_path: str, video_config: VideoConfig) -> cv2.VideoWriter:
+    video_target_dir = os.path.dirname(os.path.abspath(target_video_path))
+    os.makedirs(video_target_dir, exist_ok=True)
+    return cv2.VideoWriter(
+        target_video_path,
+        fourcc=cv2.VideoWriter_fourcc(*"mp4v"),
+        fps=video_config.fps,
+        frameSize=(video_config.width, video_config.height),
+        isColor=True
+    )
 
-    annotated_image = ball_marker_annotator.annotate(
-        image=annotated_image,
-        detections=ball_detections)
-    annotated_image = player_marker_annotator.annotate(
-        image=annotated_image,
-        detections=[player_in_possession_detection] if player_in_possession_detection else [])
-    return annotated_image
+def generate_frames(video_file: str) -> Generator[np.ndarray, None, None]:
+    video = cv2.VideoCapture(video_file)
+    while video.isOpened():
+        success, frame = video.read()
+        if not success:
+            break
+        yield frame
+    video.release()
+
+def plot_image(image: np.ndarray, size: int = 12) -> None:
+    plt.figure(figsize=(size, size))
+    plt.imshow(image[...,::-1])
+    plt.show()
